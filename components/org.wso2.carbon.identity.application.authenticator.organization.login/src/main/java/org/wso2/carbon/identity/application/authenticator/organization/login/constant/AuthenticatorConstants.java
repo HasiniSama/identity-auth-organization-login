@@ -61,6 +61,8 @@ public class AuthenticatorConstants {
 
     public static final String ORGANIZATION_LOGIN_FAILURE = "organizationLoginFailure";
     public static final String ERROR_MESSAGE = "&authFailure=true&authFailureMsg=";
+    public static final String INVALID_ORGANIZATION_NAME_ERROR_MESSAGE = "Invalid Organization Name";
+    public static final String INVALID_ORGANIZATION_HANDLE_ERROR_MESSAGE = "Invalid Organization Handle";
 
     public static final String REQUEST_ORG_PAGE_URL = "authenticationendpoint/org_name.do";
     public static final String REQUEST_ORG_HANDLE_PAGE_URL = "authenticationendpoint/org_handle.do";

@@ -114,6 +114,8 @@ import static org.wso2.carbon.identity.application.authenticator.organization.lo
 import static org.wso2.carbon.identity.application.authenticator.organization.login.constant.AuthenticatorConstants.IDP_PARAMETER;
 import static org.wso2.carbon.identity.application.authenticator.organization.login.constant.AuthenticatorConstants.ID_TOKEN_ORG_ID_PARAM;
 import static org.wso2.carbon.identity.application.authenticator.organization.login.constant.AuthenticatorConstants.INBOUND_AUTH_TYPE_OAUTH;
+import static org.wso2.carbon.identity.application.authenticator.organization.login.constant.AuthenticatorConstants.INVALID_ORGANIZATION_HANDLE_ERROR_MESSAGE;
+import static org.wso2.carbon.identity.application.authenticator.organization.login.constant.AuthenticatorConstants.INVALID_ORGANIZATION_NAME_ERROR_MESSAGE;
 import static org.wso2.carbon.identity.application.authenticator.organization.login.constant.AuthenticatorConstants.LOGIN_HINT_PARAMETER;
 import static org.wso2.carbon.identity.application.authenticator.organization.login.constant.AuthenticatorConstants.OIDC_CLAIM_DIALECT_URL;
 import static org.wso2.carbon.identity.application.authenticator.organization.login.constant.AuthenticatorConstants.ORGANIZATION_ATTRIBUTE;
@@ -151,6 +153,7 @@ import static org.wso2.carbon.identity.organization.management.service.constant.
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ERROR_RESOLVING_TENANT_DOMAIN_FROM_ORGANIZATION_DOMAIN;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ERROR_RETRIEVING_APPLICATION;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ERROR_RETRIEVING_ORGANIZATIONS_BY_NAME;
+import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ERROR_RETRIEVING_ORGANIZATION_ID_BY_HANDLE;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ERROR_VALIDATING_ORGANIZATION_DISCOVERY_ATTRIBUTE;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_ERROR_VALIDATING_ORGANIZATION_LOGIN_HINT_ATTRIBUTE;
 import static org.wso2.carbon.identity.organization.management.service.constant.OrganizationManagementConstants.ErrorMessages.ERROR_CODE_INVALID_APPLICATION;
@@ -443,29 +446,12 @@ public class OrganizationAuthenticator extends OpenIDConnectAuthenticator {
             if (StringUtils.isNotBlank(organizationName)) {
                 context.setProperty(ORG_PARAMETER, organizationName);
             }
-        } else if (StringUtils.isNotBlank((String) request.getAttribute(ORG_HANDLE_PARAMETER))) {
-            String organizationHandle = (String) request.getAttribute(ORG_HANDLE_PARAMETER);
-            context.setProperty(ORG_HANDLE_PARAMETER, organizationHandle);
-            String organizationId = getOrganizationIdByHandle(organizationHandle);
-            String organizationName = getOrganizationNameById(organizationId);
-            if (StringUtils.isNotBlank(organizationName)) {
-                context.setProperty(ORG_PARAMETER, organizationName);
-                if (!validateOrganizationName(organizationName, context, response)) {
-                    context.removeProperty(ORG_PARAMETER);
-                    return AuthenticatorFlowStatus.INCOMPLETE;
-                }
-            }
         } else if (isParameterExists(request, runtimeParams, ORG_HANDLE_PARAMETER)) {
             String organizationHandle = getParameter(request, runtimeParams, ORG_HANDLE_PARAMETER);
             context.setProperty(ORG_HANDLE_PARAMETER, organizationHandle);
-            String organizationId = getOrganizationIdByHandle(organizationHandle);
-            String organizationName = getOrganizationNameById(organizationId);
-            if (StringUtils.isNotBlank(organizationName)) {
-                context.setProperty(ORG_PARAMETER, organizationName);
-                if (!validateOrganizationName(organizationName, context, response)) {
-                    context.removeProperty(ORG_PARAMETER);
-                    return AuthenticatorFlowStatus.INCOMPLETE;
-                }
+            if (!validateOrganizationHandle(organizationHandle, context, response)) {
+                context.removeProperty(ORG_PARAMETER);
+                return AuthenticatorFlowStatus.INCOMPLETE;
             }
         } else if (isParameterExists(request, runtimeParams, LOGIN_HINT_PARAMETER)) {
             String loginHint = getParameter(request, runtimeParams, LOGIN_HINT_PARAMETER);
@@ -555,16 +541,6 @@ public class OrganizationAuthenticator extends OpenIDConnectAuthenticator {
         }
     }
 
-    private String getOrganizationIdByHandle(String organizationHandle) {
-
-        try {
-            return getOrganizationManager().resolveOrganizationId(organizationHandle);
-        } catch (OrganizationManagementException e) {
-            log.debug(e.getMessage());
-            return null;
-        }
-    }
-
     private boolean validateOrganizationName(String organizationName, AuthenticationContext context,
                                              HttpServletResponse response) throws AuthenticationFailedException {
 
@@ -588,10 +564,29 @@ public class OrganizationAuthenticator extends OpenIDConnectAuthenticator {
                 redirectToOrgDiscoveryInputCapture(response, context);
             }
         } catch (OrganizationManagementClientException e) {
-            context.setProperty(ORGANIZATION_LOGIN_FAILURE, "Invalid Organization Name");
+            context.setProperty(ORGANIZATION_LOGIN_FAILURE, INVALID_ORGANIZATION_NAME_ERROR_MESSAGE);
             redirectToOrgDiscoveryInputCapture(response, context);
         } catch (OrganizationManagementException e) {
             throw handleAuthFailures(ERROR_CODE_ERROR_RETRIEVING_ORGANIZATIONS_BY_NAME, e);
+        }
+        return false;
+    }
+
+    private boolean validateOrganizationHandle(String organizationHandle, AuthenticationContext context,
+                                               HttpServletResponse response) throws AuthenticationFailedException {
+
+        try {
+            String organizationId = getOrganizationManager().resolveOrganizationId(organizationHandle);
+            String organizationName = getOrganizationNameById(organizationId);
+            if (StringUtils.isNotBlank(organizationName)) {
+                context.setProperty(ORG_PARAMETER, organizationName);
+                return validateOrganizationName(organizationName, context, response);
+            }
+        } catch (OrganizationManagementClientException e) {
+            context.setProperty(ORGANIZATION_LOGIN_FAILURE, INVALID_ORGANIZATION_HANDLE_ERROR_MESSAGE);
+            redirectToOrgDiscoveryInputCapture(response, context);
+        } catch (OrganizationManagementException e) {
+            throw handleAuthFailures(ERROR_CODE_ERROR_RETRIEVING_ORGANIZATION_ID_BY_HANDLE, e);
         }
         return false;
     }
@@ -1067,18 +1062,14 @@ public class OrganizationAuthenticator extends OpenIDConnectAuthenticator {
     }
 
     /**
-     * Get the request organization handle page url from the application-authentication.xml file.
+     * Get the request organization handle page url.
      *
      * @param context the AuthenticationContext
      * @return The url path to request organization handle.
      */
     private String getOrganizationHandleRequestPageUrl(AuthenticationContext context) throws URLBuilderException {
 
-        String requestOrgPageUrl = getConfiguration(context, REQUEST_ORG_PAGE_URL_CONFIG);
-        if (StringUtils.isBlank(requestOrgPageUrl)) {
-            requestOrgPageUrl = REQUEST_ORG_HANDLE_PAGE_URL;
-        }
-        return ServiceURLBuilder.create().addPath(requestOrgPageUrl).build().getAbsolutePublicURL();
+        return ServiceURLBuilder.create().addPath(REQUEST_ORG_HANDLE_PAGE_URL).build().getAbsolutePublicURL();
     }
 
     private String getOrganizationDomainPageUrl() throws URLBuilderException {
